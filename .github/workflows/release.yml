@@ -187,7 +187,8 @@ jobs:
       - name: Build Package
         run: |
           cd ${{ github.workspace }}/main
-          sed -i '' "s/^TARGET.*$/TARGET := iphone:clang:${{ inputs.sdk_version }}:${{ inputs.target_version }}/" Makefile
+          sed -i '' "s/^TARGET.*$/TARGET := iphone:clang:${{ inputs.sdk_version }}:${{ inputs.target_version }}/" \
+            Makefile deps/flex/Makefile deps/zxPluginsInject/upstream/Makefile
           ./build.sh --${{ matrix.deploy_format }}
         env:
           THEOS: ${{ github.workspace }}/theos
