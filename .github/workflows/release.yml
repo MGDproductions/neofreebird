@@ -5,7 +5,7 @@ on:
     inputs:
       sdk_version:
         description: "iOS SDK Version"
-        default: "16.5"
+        default: "27.1"
         required: true
         type: string
       target_version:
@@ -41,7 +41,7 @@ concurrency:
 jobs:
   ffmpeg:
     name: Build ffmpeg Stack
-    runs-on: macos-latest
+    runs-on: xcode-27
     outputs:
       cache-key: ${{ steps.ffmpeg-key.outputs.key }}
 
@@ -75,7 +75,7 @@ jobs:
 
   build:
     name: Build ${{ matrix.deploy_format }}
-    runs-on: macos-latest
+    runs-on: xcode-27
     needs: ffmpeg
     permissions:
       contents: write
@@ -119,26 +119,33 @@ jobs:
         if: matrix.ipa
         run: pip install https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip
 
-      - name: iOS SDK Caching
-        id: SDK
-        uses: actions/cache@v6
-        env:
-          cache-name: iOS-${{ inputs.sdk_version }}-SDK
-        with:
-          path: theos/sdks/
-          key: ${{ env.cache-name }}
-          restore-keys: ${{ env.cache-name }}
-
-      - name: Download iOS SDK
-        if: steps.SDK.outputs.cache-hit != 'true'
+      - name: Set Up iOS SDK
         run: |
+          # theos/sdks stops at 16.5, so newer SDKs come from an installed Xcode
+          for XCODE in /Applications/Xcode*.app; do
+            SDK_PATH="$XCODE/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+            VERSION=$(/usr/libexec/PlistBuddy -c "Print :Version" "$SDK_PATH/SDKSettings.plist" 2>/dev/null || true)
+            echo "$XCODE: iOS SDK ${VERSION:-none}"
+            if [ "$VERSION" = "$SDK_VERSION" ]; then
+              sudo xcode-select -s "$XCODE"
+              ln -s "$SDK_PATH" "${THEOS}/sdks/iPhoneOS${SDK_VERSION}.sdk"
+              exit 0
+            fi
+          done
+
+          echo "No installed Xcode has iOS SDK $SDK_VERSION, trying theos/sdks"
           git clone -n --depth=1 --filter=tree:0 https://github.com/theos/sdks/
           cd sdks
-          git sparse-checkout set --no-cone iPhoneOS${{ inputs.sdk_version }}.sdk
+          git sparse-checkout set --no-cone iPhoneOS${SDK_VERSION}.sdk
           git checkout
+          if ! ls -d ./*.sdk >/dev/null 2>&1; then
+            echo "::error::iOS SDK $SDK_VERSION not found in any installed Xcode or theos/sdks"
+            exit 1
+          fi
           mv ./*.sdk "${THEOS}/sdks"
         env:
           THEOS: ${{ github.workspace }}/theos
+          SDK_VERSION: ${{ inputs.sdk_version }}
 
       - name: Get Tweak Info
         id: tweak_info
